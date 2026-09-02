@@ -212,9 +212,10 @@ export default class Davdebrid {
             );
 
             files.unshift(...newFiles);
-            await cache.set(cacheKey, [storedDate, files], {ttl: config.checkAllFilesInterval});
 
-            if(!webhookDelivered){
+            if(webhookDelivered){
+              await cache.set(cacheKey, [storedDate, files], {ttl: config.checkAllFilesInterval});
+            }else{
               console.log('One or more webhooks failed; new files will be retried on the next recent-files check.');
             }
           }
