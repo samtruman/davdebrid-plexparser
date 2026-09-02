@@ -100,11 +100,10 @@ The fork uses a dedicated classifier before the generic folder-organizer rules a
 A video is classified as a TV episode when its filename contains a recognized episode marker, for example:
 
 ```text
-Sugar.2024.S01E01.ITA.ENG.mkv
-The.Acolyte.S01E08.ITA.ENG.mkv
-Chernobyl.1x01.ITA.ENG.mkv
-Operazione.Speciale.Lioness.S03E05.ITA.ENG.mkv
-Lanterns.S01E01.ITA.ENG.mkv
+Example.Show.S01E01.1080p.WEB-DL.mkv
+Another.Series.S02E03.2160p.WEB-DL.mkv
+Sample.Show.1x04.1080p.WEB-DL.mkv
+Demo.Series.S03-E07.1080p.WEB-DL.mkv
 ```
 
 These files are exposed under:
@@ -118,9 +117,9 @@ These files are exposed under:
 Video files without an episode marker are classified as movies, for example:
 
 ```text
-Spider-Man.Homecoming.2017.4K.HDR.DV.2160p.BDRemux.mkv
-Superman.2025.2160p.WEB-DL.mkv
-Swapped - Al tuo posto (2026).mkv
+Example.Movie.2025.2160p.WEB-DL.mkv
+Another.Movie.2024.1080p.BluRay.mkv
+Sample.Film.2026.2160p.WEB-DL.mkv
 ```
 
 These files are exposed under:
