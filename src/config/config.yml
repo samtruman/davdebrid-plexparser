@@ -13,23 +13,23 @@ directories:
     unique: false
     cond: {}
 
-  # This directory contains only video and subtitle files that match the specified regex 
-  # or are located within a parent directory containing more than six video files 
-  # (e.g., torrent with multiple videos).
+  # Plex-style classification: explicit season/episode markers are Shows.
+  # This avoids relying on a minimum number of files in the parent directory.
   - name: 'Shows'
     unique: true
     cond:
-      or:
-        regex: '[0-9]+E[0-9]+|[0-9]+x[0-9]+'
-        minVideosInParent: 6
-      fileTypes:
-        - 'video'
-        - 'subtitle'
+      and:
+        mediaType: 'show'
+        fileTypes:
+          - 'video'
+          - 'subtitle'
 
-  # This directory contains all remaining video and subtitle files that do not match the conditions of previous unique directories (Shows).
+  # Remaining video/subtitle files are Movies.
   - name: 'Movies'
     unique: true
     cond:
-      fileTypes:
-        - 'video'
-        - 'subtitle'
+      and:
+        mediaType: 'movie'
+        fileTypes:
+          - 'video'
+          - 'subtitle'
