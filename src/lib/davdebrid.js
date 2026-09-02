@@ -4,6 +4,7 @@ import * as debrid from './debrid.js';
 import config from './config.js';
 import {wait, indexByKey, fileType} from './util.js';
 import FileOrganizer from './fileOrganizer.js';
+import {dispatchWebhook} from './webhook.js';
 import * as fs from 'node:fs/promises';
 import { parse } from 'yaml';
 
@@ -144,7 +145,7 @@ export default class Davdebrid {
     const headers = {'X-Plex-Token': plexToken, Accept: 'application/json'};
 
     const sections = await fetch(`${plexUrl}/library/sections`, {headers}).then(res => res.json());
-    const sectionLocationRegex = new RegExp(`\/(${this.directories.map(dir => dir.name).join('|')})`);
+    const sectionLocationRegex = new RegExp(`\\/(${this.directories.map(dir => dir.name).join('|')})`);
 
     // rclone --dir-cache-time 5s
     await wait(5000);
@@ -199,8 +200,23 @@ export default class Davdebrid {
           const newFiles = recentFiles.filter(recentFile => !fileById[recentFile.id]);
           if(newFiles.length){
             console.log(`${this.#debrid.shortName} : ${newFiles.length} new recent files found from debrid API`);
+            const webhookDelivered = await dispatchWebhook(
+              config.webhooks,
+              'new_files',
+              {
+                source: this.#debrid.shortName,
+                files: newFiles
+              },
+              config.webhookTimeout
+            );
+
             files.unshift(...newFiles);
-            await cache.set(cacheKey, [storedDate, files], {ttl: config.checkAllFilesInterval});
+
+            if(webhookDelivered){
+              await cache.set(cacheKey, [storedDate, files], {ttl: config.checkAllFilesInterval});
+            }else{
+              console.log('One or more webhooks failed; new files will be retried on the next recent-files check.');
+            }
           }
         }
 
