@@ -180,11 +180,51 @@ export default class Davdebrid {
 
       if(!files || (new Date() - new Date(storedDate)) > config.checkAllFilesInterval * 1000){
 
-        files = await this.#debrid.getFiles();
-        console.log(`${this.#debrid.shortName} : ${files.length} files found from debrid API`);
+        const previousFiles = files || [];
+        const previousFileById = indexByKey(previousFiles, 'id');
+        const currentFiles = await this.#debrid.getFiles();
+        const currentFileById = indexByKey(currentFiles, 'id');
+        const newFiles = currentFiles.filter(file => !previousFileById[file.id]);
+        const deletedFiles = previousFiles.filter(file => !currentFileById[file.id]);
 
-        await cache.set(cacheKey, [new Date(), files], {ttl: config.checkAllFilesInterval});
-        await cache.set(recentFilesCheckCacheKey, new Date(), {ttl: config.checkNewFilesInterval});
+        console.log(`${this.#debrid.shortName} : ${currentFiles.length} files found from debrid API`);
+
+        let webhooksDelivered = true;
+
+        if(newFiles.length){
+          console.log(`${this.#debrid.shortName} : ${newFiles.length} new files found from full scan`);
+          webhooksDelivered = await dispatchWebhook(
+            config.webhooks,
+            'new_files',
+            {
+              source: this.#debrid.shortName,
+              files: newFiles
+            },
+            config.webhookTimeout
+          ) && webhooksDelivered;
+        }
+
+        if(deletedFiles.length){
+          console.log(`${this.#debrid.shortName} : ${deletedFiles.length} deleted files found from full scan`);
+          webhooksDelivered = await dispatchWebhook(
+            config.webhooks,
+            'deleted_files',
+            {
+              source: this.#debrid.shortName,
+              files: deletedFiles
+            },
+            config.webhookTimeout
+          ) && webhooksDelivered;
+        }
+
+        if(webhooksDelivered){
+          files = currentFiles;
+          await cache.set(cacheKey, [new Date(), files], {ttl: config.checkAllFilesInterval * 2});
+          await cache.set(recentFilesCheckCacheKey, new Date(), {ttl: config.checkNewFilesInterval});
+        }else{
+          console.log('One or more webhooks failed; full-scan changes will be retried on the next full scan.');
+          files = currentFiles;
+        }
 
       }else{
 
@@ -213,7 +253,7 @@ export default class Davdebrid {
             files.unshift(...newFiles);
 
             if(webhookDelivered){
-              await cache.set(cacheKey, [storedDate, files], {ttl: config.checkAllFilesInterval});
+              await cache.set(cacheKey, [storedDate, files], {ttl: config.checkAllFilesInterval * 2});
             }else{
               console.log('One or more webhooks failed; new files will be retried on the next recent-files check.');
             }
