@@ -1,3 +1,5 @@
+import {classifyMedia} from './mediaClassifier.js';
+
 export default class FileOrganizer {
 
   constructor(files = [], directories = []){
@@ -20,7 +22,7 @@ export default class FileOrganizer {
       for(let dir of this.directories){
         if(this.#matchesCondition(file, dir.cond)){
           dir.files.push(file);
-          if(dir.unique)break; // Stop when a unique directory is reached 
+          if(dir.unique)break; // Stop when a unique directory is reached
         }
       }
     }
@@ -42,8 +44,11 @@ export default class FileOrganizer {
       case 'minVideosInParent':
         return file.videosInParent >= value;
 
+      case 'mediaType':
+        return classifyMedia(file) === value;
+
       default:
-        // Unknow key
+        // Unknown key
         return false;
     }
   }
