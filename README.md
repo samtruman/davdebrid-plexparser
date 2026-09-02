@@ -13,6 +13,7 @@ It also adds an optional **generic HTTP webhook** for newly detected files. The 
 - Keeps the `All`, `Shows`, and `Movies` WebDAV directories.
 - Optional generic HTTP webhooks for events such as newly detected files.
 - Webhook delivery includes a stable event ID so consumers can safely implement idempotency.
+- Multiple webhook endpoints can subscribe independently to selected events.
 - Multi-platform Docker image for `linux/amd64` and `linux/arm64`.
 - Docker images are published automatically from the `main` branch through GitHub Actions.
 
@@ -136,6 +137,30 @@ Subtitles continue to be handled by the existing folder-organizer logic.
 
 ## Webhooks
 
+Webhooks provide a generic integration point for applications that need to react when DavDebrid detects new files in the Debrid library.
+
+DavDebrid already checks the Debrid service for recently added files. When a new file is detected, the webhook system can send an HTTP `POST` notification to one or more configured services. This avoids requiring external applications to poll the filesystem or WebDAV mount themselves.
+
+The feature is deliberately **service-agnostic**. DavDebrid does not know whether the receiving service is a media manager, an indexer, an automation service, a notification system, or a custom application. Each consumer decides what to do with the event.
+
+For example, a consumer could receive a `new_files` event and then:
+
+```text
+DavDebrid
+   │
+   ├── detects new file
+   │
+   ▼
+HTTP webhook
+   │
+   ├── Media manager
+   ├── Indexer
+   ├── Notification service
+   └── Custom application
+```
+
+### Configuration
+
 Webhooks are optional and disabled unless `WEBHOOKS` is configured.
 
 `WEBHOOKS` accepts a JSON array. Each target can subscribe to one or more event types:
@@ -144,11 +169,19 @@ Webhooks are optional and disabled unless `WEBHOOKS` is configured.
 -e 'WEBHOOKS=[{"url":"http://example-service:8080/webhook","events":["new_files"]}]'
 ```
 
+Multiple independent targets are supported:
+
+```bash
+-e 'WEBHOOKS=[{"url":"http://service-a:8080/webhook","events":["new_files"]},{"url":"http://service-b:9000/davdebrid","events":["new_files"]}]'
+```
+
 If `events` is omitted, the endpoint receives `new_files` events by default. Use `*` to subscribe to all supported events.
 
-The optional `WEBHOOK_TIMEOUT` environment variable controls the HTTP request timeout in milliseconds and defaults to `10000`.
+The optional `WEBHOOK_TIMEOUT` environment variable controls the HTTP request timeout in milliseconds and defaults to `10000` (10 seconds).
 
-For a newly detected file, DavDebrid sends an HTTP `POST` with `Content-Type: application/json` and a payload similar to:
+### `new_files` event
+
+For newly detected files, DavDebrid sends an HTTP `POST` with `Content-Type: application/json` and a payload similar to:
 
 ```json
 {
@@ -167,9 +200,20 @@ For a newly detected file, DavDebrid sends an HTTP `POST` with `Content-Type: ap
 }
 ```
 
-The request also includes `X-DavDebrid-Event` and `X-DavDebrid-Event-ID` headers. Consumers should use the event ID for idempotency because a failed delivery is retried on a later recent-files check.
+The request also includes:
 
-DavDebrid does not interpret the webhook response body. A non-2xx response or request failure is considered an unsuccessful delivery.
+- `X-DavDebrid-Event` — event type.
+- `X-DavDebrid-Event-ID` — stable event identifier.
+
+The event ID is derived from the event type and the detected file IDs. Consumers should use it for idempotency because a failed delivery is retried on a later recent-files check.
+
+DavDebrid considers a delivery successful only when the HTTP request completes successfully with a 2xx response. The response body is ignored.
+
+If one or more webhook deliveries fail, the newly detected files remain eligible for delivery on the next recent-files check. This makes the webhook a notification mechanism rather than a message queue: consumers should process events idempotently and return a successful HTTP response once the event has been accepted.
+
+### Security
+
+Webhook URLs are configured by the operator and may contain internal network addresses. Webhooks should normally be sent to trusted services on a private network or otherwise protected using the deployment's network and access controls.
 
 ## Configuration
 
