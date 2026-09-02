@@ -1,16 +1,28 @@
-# DavDebrid
+# DavDebrid Plex Parser
 
-A self-hosted WebDAV server for Debrid-Link, automatically organizing your media files (Movies/TV Shows) for seamless integration with your media center. Changes are detected in 30sec, allowing updates to instantly appear in your Plex library. The rclone mount is optimized to minimize bandwidth usage from debrid.
+A self-hosted WebDAV server for Debrid services, automatically organizing media files into **Movies** and **TV Shows** for seamless integration with Plex and other media centers.
 
-## Installation
+This fork adds a **Plex-style media classifier** to improve the reliability of movie/TV show detection. In particular, filenames containing standard episode markers such as `S01E01`, `S1E1`, or `1x01` are classified as TV shows instead of relying only on the number of videos in the parent directory.
 
-### Run with Docker
+## What's different from upstream
+
+- Robust movie/TV show classification based on Plex-style episode naming patterns.
+- Supports common episode formats such as `S01E01`, `S1E1`, `S01-E01`, `1x01`, and season/episode wording.
+- Keeps the `All`, `Shows`, and `Movies` WebDAV directories.
+- Multi-platform Docker image for `linux/amd64` and `linux/arm64`.
+- Docker images are published automatically from the `main` branch through GitHub Actions.
+
+## Docker
+
+The custom image is published on Docker Hub as:
+
+```text
+samtruman/davdebrid-plexparser:latest
+```
+
+Run it with:
 
 ```bash
-# Create a volume
-docker volume create davdebrid_data
-
-# Run the container
 docker run -d \
   --name=davdebrid \
   -p 8080:8080 \
@@ -19,16 +31,45 @@ docker run -d \
   -e DEBRID_API_KEY=apikey \
   -e DATA_FOLDER=/data \
   -v davdebrid_data:/data \
-  arvida42/davdebrid:latest
+  samtruman/davdebrid-plexparser:latest
 ```
 
-Your server is available on http://localhost:8080
+## Installation
 
-You can mount it locally with rclone by using the following command:
+### Run with Docker Compose and Mount with Rclone
+
+1. Download the [`docker-compose.yml`](./docker-compose.yml) file.
+2. Edit the `DEBRID_API_KEY`.
+3. By default, the mount point is set to a Docker volume. You can change this to a local directory if preferred.
+4. Run:
+
+```bash
+docker compose up -d
+```
+
+The included Rclone configuration uses a short directory cache time so that changes detected by DavDebrid become visible promptly through the mount.
+
+### Run with Docker Compose, Mount with Rclone, and Plex
+
+1. Download the [`docker-compose-plex.yml`](./docker-compose-plex.yml) file.
+2. Configure `DEBRID_API_KEY` and the Plex settings.
+3. Start the services:
+
+```bash
+docker compose -f docker-compose-plex.yml up -d
+```
+
+DavDebrid can automatically refresh Plex when changes are detected in the Debrid library.
+
+## Rclone
+
+DavDebrid exposes the organized media through WebDAV. A typical Rclone mount is:
+
 ```bash
 export RCLONE_CONFIG_DAV_TYPE=webdav
 export RCLONE_CONFIG_DAV_URL=http://localhost:8080
 export RCLONE_CONFIG_DAV_VENDOR=other
+
 rclone mount dav: /mnt/dav \
   --dir-cache-time 5s \
   --allow-other \
@@ -40,101 +81,71 @@ rclone mount dav: /mnt/dav \
   --allow-non-empty
 ```
 
-### Run with Docker Compose and Mount with Rclone
+The WebDAV root contains:
 
-1. Download the [`downloader-compose.yml`](./docker-compose.yml) file.
-2. Edit the `DEBRID_API_KEY`. You can obtain it from [Debrid-Link API Key](https://debrid-link.com/webapp/apikey).
-3. By default, the mount point is set to a Docker volume (`davdebrid-mnt`). You can change this to a local directory if preferred.
-4. Run the following command to start the services:
-  ```bash
-  docker compose up -d
-  ```
+```text
+/
+├── All/
+├── Shows/
+├── Movies/
+└── Config/
+```
 
-### Run with Docker Compose, Mount with Rclone, and Run the Plex Server
+## Media classification
 
-1. Download the [`downloader-compose-plex.yml`](./docker-compose-plex.yml) file.
-2. Edit the `DEBRID_API_KEY`. You can get it from [Debrid-Link API Key](https://debrid-link.com/webapp/apikey).
-3. Edit the `PLEX_CLAIM`. You can obtain it from [Plex Claim Token](https://plex.tv/claim).
-4. Run the following command to start the services:
-  ```bash
-  docker compose -f docker-compose-plex.yml up -d
-  ```
-5. To automatically update your Plex library when changes are detected in Debrid. Go to Plex at http://localhost:32400, open Developer Tools, run the command `localStorage.myPlexAccessToken` and copy the result into the `PLEX_TOKEN` setting.
-6. Restart the services with the updated configuration:
-  ```bash
-  docker compose -f docker-compose-plex.yml up -d
-  ```
-7. In Plex settings, under Library, set the following options to "**never**":
-  - Generate video preview thumbnails
-  - Generate chapter thumbnails
-  - Analyze audio tracks for loudness
-8. Finally, configure Plex to use your WebDAV mount. The WebDAV is mounted at `/mnt/dav`.
+The fork uses a dedicated classifier before the generic folder-organizer rules are applied.
+
+### TV Shows
+
+A video is classified as a TV episode when its filename contains a recognized episode marker, for example:
+
+```text
+Sugar.2024.S01E01.ITA.ENG.mkv
+The.Acolyte.S01E08.ITA.ENG.mkv
+Chernobyl.1x01.ITA.ENG.mkv
+Operazione.Speciale.Lioness.S03E05.ITA.ENG.mkv
+Lanterns.S01E01.ITA.ENG.mkv
+```
+
+These files are exposed under:
+
+```text
+/Shows/
+```
+
+### Movies
+
+Video files without an episode marker are classified as movies, for example:
+
+```text
+Spider-Man.Homecoming.2017.4K.HDR.DV.2160p.BDRemux.mkv
+Superman.2025.2160p.WEB-DL.mkv
+Swapped - Al tuo posto (2026).mkv
+```
+
+These files are exposed under:
+
+```text
+/Movies/
+```
+
+Subtitles continue to be handled by the existing folder-organizer logic.
 
 ## Configuration
 
-### Server
+Server configuration is documented in [`src/lib/config.js`](./src/lib/config.js).
 
-All server configurations are documented in the [config.js file](./src/lib/config.js)
+Folder organization is configured through `config.custom.yml`.
 
-### Folder organizing
+When mounted through WebDAV, the `Config` directory contains:
 
-When you mount the WebDAV server, you’ll find a `Config` directory containing two files:
+- **`config.yml`** — default configuration.
+- **`config.custom.yml`** — user-customizable configuration.
 
-- **`config.yml`**: This is the default configuration file for your directories. It provides base settings and is read-only, so it cannot be modified.
-- **`config.custom.yml`**: This is your customizable configuration file. You can edit it to define and apply your own organization rules for directories, which will override the default configuration.
+The directory rules are processed sequentially. `All` remains non-unique, while `Shows` and `Movies` are unique directories.
 
-Each directory configuration is processed sequentially in the order specified in the configuration file.
+## Fork status
 
-#### Folder Properties
-- **`name`**: The display name for the directory at the root of your WebDAV.
-- **`unique`**: Specifies whether the directory is unique. Files in non-unique directories can also appear in other matching directories. Files cannot appear in more than one unique directory.
-- **`cond`**: The condition used to determine which files are in the directory.
+This repository is a fork of [`arvida42/davdebrid`](https://github.com/arvida42/davdebrid) with the media-classification changes described above.
 
-#### Condition Types
-- **`regex`**: Matches files based on the specified regex pattern.
-- **`minVideosInParent`**: Requires that the file be located within a parent directory containing at least `n` video files.
-- **`fileTypes`**: Defines the acceptable file types (e.g., `video`, `subtitle`, `music`, `image`, `unknown`).
-- **`or`**: Applies an `OR` logic across the listed conditions.
-- **`and`**: Applies an `AND` logic across conditions. This is the default behavior and doesn’t need to be explicitly specified.
-
-
-For example, the default organization rules:
-
-```yaml
-# Default Configuration - Cannot be Overwritten
-# To customize, please edit the 'config.custom.yml' file.
-
-# Folder Organizer Conditions
-# Files available on the debrid service will be organized into directories based on specified conditions.
-# If a file matches a 'unique' directory condition, no further `unique` directory conditions will be checked for that file.
-
-directories:
-
-  # This directory contains all files, regardless of type.
-  # Since this is not a unique condition, files may also appear in other applicable directories.
-  - name: 'All'
-    unique: false
-    cond: {}
-
-  # This directory contains only video and subtitle files that match the specified regex 
-  # or are located within a parent directory containing more than six video files 
-  # (e.g., torrent with multiple videos).
-  - name: 'Shows'
-    unique: true
-    cond:
-      or:
-        regex: '[0-9]+E[0-9]+|[0-9]+x[0-9]+'
-        minVideosInParent: 6
-      fileTypes:
-        - 'video'
-        - 'subtitle'
-
-  # This directory contains all remaining video and subtitle files that do not match the conditions of previous unique directories (Shows).
-  - name: 'Movies'
-    unique: true
-    cond:
-      fileTypes:
-        - 'video'
-        - 'subtitle'
-
-```
+The project is intended to remain compatible with the upstream DavDebrid architecture while providing more reliable Plex-oriented movie and TV show detection.
