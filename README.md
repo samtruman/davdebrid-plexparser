@@ -4,11 +4,15 @@ A self-hosted WebDAV server for Debrid services, automatically organizing media 
 
 This fork adds a **Plex-style media classifier** to improve the reliability of movie/TV show detection. In particular, filenames containing standard episode markers such as `S01E01`, `S1E1`, or `1x01` are classified as TV shows instead of relying only on the number of videos in the parent directory.
 
+It also adds an optional **generic HTTP webhook** for newly detected files. The webhook is deliberately service-agnostic: DavDebrid only reports the event and does not depend on CineCircle, Riven, Sonarr, Radarr, or any other consumer.
+
 ## What's different from upstream
 
 - Robust movie/TV show classification based on Plex-style episode naming patterns.
 - Supports common episode formats such as `S01E01`, `S1E1`, `S01-E01`, `1x01`, and season/episode wording.
 - Keeps the `All`, `Shows`, and `Movies` WebDAV directories.
+- Optional generic HTTP webhooks for events such as newly detected files.
+- Webhook delivery includes a stable event ID so consumers can safely implement idempotency.
 - Multi-platform Docker image for `linux/amd64` and `linux/arm64`.
 - Docker images are published automatically from the `main` branch through GitHub Actions.
 
@@ -130,6 +134,43 @@ These files are exposed under:
 
 Subtitles continue to be handled by the existing folder-organizer logic.
 
+## Webhooks
+
+Webhooks are optional and disabled unless `WEBHOOKS` is configured.
+
+`WEBHOOKS` accepts a JSON array. Each target can subscribe to one or more event types:
+
+```bash
+-e 'WEBHOOKS=[{"url":"http://example-service:8080/webhook","events":["new_files"]}]'
+```
+
+If `events` is omitted, the endpoint receives `new_files` events by default. Use `*` to subscribe to all supported events.
+
+The optional `WEBHOOK_TIMEOUT` environment variable controls the HTTP request timeout in milliseconds and defaults to `10000`.
+
+For a newly detected file, DavDebrid sends an HTTP `POST` with `Content-Type: application/json` and a payload similar to:
+
+```json
+{
+  "event": "new_files",
+  "event_id": "stable-event-id",
+  "timestamp": "2026-01-01T00:00:00.000Z",
+  "source": "AD",
+  "files": [
+    {
+      "id": "123456",
+      "name": "Example.Show.S01E01.1080p.WEB-DL.mkv",
+      "size": 123456789,
+      "type": "video"
+    }
+  ]
+}
+```
+
+The request also includes `X-DavDebrid-Event` and `X-DavDebrid-Event-ID` headers. Consumers should use the event ID for idempotency because a failed delivery is retried on a later recent-files check.
+
+DavDebrid does not interpret the webhook response body. A non-2xx response or request failure is considered an unsuccessful delivery.
+
 ## Configuration
 
 Server configuration is documented in [`src/lib/config.js`](./src/lib/config.js).
@@ -145,6 +186,6 @@ The directory rules are processed sequentially. `All` remains non-unique, while 
 
 ## Fork status
 
-This repository is a fork of [`arvida42/davdebrid`](https://github.com/arvida42/davdebrid) with the media-classification changes described above.
+This repository is a fork of [`arvida42/davdebrid`](https://github.com/arvida42/davdebrid) with the media-classification and generic webhook changes described above.
 
-The project is intended to remain compatible with the upstream DavDebrid architecture while providing more reliable Plex-oriented movie and TV show detection.
+The project is intended to remain compatible with the upstream DavDebrid architecture while providing more reliable Plex-oriented movie and TV show detection and an optional integration point for external services.
