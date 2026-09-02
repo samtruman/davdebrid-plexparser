@@ -23,10 +23,12 @@ function hasEpisodeMarker(name) {
 }
 
 export function classifyMedia(file = {}) {
-  const name = file.name || '';
-  const type = file.type || '';
+  // Accept both a DavDebrid file object and a plain filename.
+  const normalizedFile = typeof file === 'string' ? {name: file} : file;
+  const name = normalizedFile.name || '';
+  const type = normalizedFile.type || '';
 
-  if (type !== 'video' && type !== 'subtitle') {
+  if (type && type !== 'video' && type !== 'subtitle') {
     return null;
   }
 
@@ -34,8 +36,7 @@ export function classifyMedia(file = {}) {
     return 'show';
   }
 
-  // Preserve a conservative fallback for files where the extension/type is
-  // supplied by an older Debrid implementation.
+  // If the caller did not provide a file type, infer it from the extension.
   if (!type) {
     const extension = String(name).split('.').pop().toLowerCase();
     if (!VIDEO_EXTENSIONS.has(extension)) {
