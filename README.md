@@ -39,6 +39,8 @@ docker run -d \
   samtruman/davdebrid-plexparser:latest
 ```
 
+The published `8080` port is the **WebDAV server port**. DavDebrid does **not** open a separate listening port for webhooks: webhook delivery is outbound HTTP/HTTPS from DavDebrid to the configured consumer URL.
+
 ## Installation
 
 ### Run with Docker Compose and Mount with Rclone
@@ -151,13 +153,55 @@ DavDebrid
    ├── detects new file
    │
    ▼
-HTTP webhook
+HTTP POST
    │
    ├── Media manager
    ├── Indexer
    ├── Notification service
    └── Custom application
 ```
+
+### Networking and ports
+
+DavDebrid is the **webhook sender**, not the webhook server.
+
+There is no dedicated webhook listener and therefore no `WEBHOOK_PORT` setting in DavDebrid. The receiving service owns its own HTTP/HTTPS listener and port. The complete destination, including the port when required, is specified in the webhook URL.
+
+#### Container-to-container
+
+If the consumer runs in another Docker container on a shared Docker network, use the consumer's Docker DNS name and its **internal container port**:
+
+```text
+http://media-service:8080/webhook
+```
+
+No host port needs to be published for this communication. For example:
+
+```text
+DavDebrid container
+       │
+       │ HTTP POST
+       ▼
+media-service:8080
+       │
+       └── webhook consumer
+```
+
+This is the preferred setup when both services run on the same Docker network.
+
+#### Service running on the Docker host
+
+If the consumer runs directly on the Docker host rather than in a container, configure an address reachable from the container, together with the port on which the host service listens. The exact host address depends on the Docker/network configuration.
+
+#### External service
+
+A consumer on another server can be addressed with a normal HTTP or HTTPS URL:
+
+```text
+https://example.example.com/api/webhook
+```
+
+In this case the receiving service is responsible for exposing and protecting its endpoint. DavDebrid only makes the outbound request.
 
 ### Configuration
 
@@ -169,11 +213,15 @@ Webhooks are optional and disabled unless `WEBHOOKS` is configured.
 -e 'WEBHOOKS=[{"url":"http://example-service:8080/webhook","events":["new_files"]}]'
 ```
 
+The port in the URL (`8080` in this example) belongs to the **receiving service**, not to DavDebrid.
+
 Multiple independent targets are supported:
 
 ```bash
 -e 'WEBHOOKS=[{"url":"http://service-a:8080/webhook","events":["new_files"]},{"url":"http://service-b:9000/davdebrid","events":["new_files"]}]'
 ```
+
+Each consumer can use a different hostname, path, and port.
 
 If `events` is omitted, the endpoint receives `new_files` events by default. Use `*` to subscribe to all supported events.
 
@@ -211,9 +259,33 @@ DavDebrid considers a delivery successful only when the HTTP request completes s
 
 If one or more webhook deliveries fail, the newly detected files remain eligible for delivery on the next recent-files check. This makes the webhook a notification mechanism rather than a message queue: consumers should process events idempotently and return a successful HTTP response once the event has been accepted.
 
+### Example: Docker Compose
+
+A consumer on the same Docker network can be configured directly with its service name:
+
+```yaml
+environment:
+  WEBHOOKS: >-
+    [{"url":"http://cinecircle:8080/webhook","events":["new_files"]}]
+```
+
+The `8080` above is the port exposed **inside the Docker network by `cinecircle`**. It does not need to be published on the Raspberry host.
+
+If the consumer instead listens internally on `9000`, simply use:
+
+```yaml
+environment:
+  WEBHOOKS: >-
+    [{"url":"http://cinecircle:9000/webhook","events":["new_files"]}]
+```
+
+No DavDebrid code change is required when changing the consumer port.
+
 ### Security
 
 Webhook URLs are configured by the operator and may contain internal network addresses. Webhooks should normally be sent to trusted services on a private network or otherwise protected using the deployment's network and access controls.
+
+If a webhook consumer is exposed outside the Docker network, use HTTPS and appropriate authentication/access controls. DavDebrid currently provides event headers and a stable event ID, but these are **not authentication credentials**.
 
 ## Configuration
 
