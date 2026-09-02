@@ -1,7 +1,13 @@
 FROM node:20-slim
 
-RUN mkdir -p /home/node/app && chown -R node:node /home/node/app \
-  && mkdir -p /data && chown -R node:node /data
+# procps provides useful process diagnostics (ps, etc.) for troubleshooting.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends procps \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /home/node/app \
+  && chown -R node:node /home/node/app \
+  && mkdir -p /data \
+  && chown -R node:node /data
 
 WORKDIR /home/node/app
 
