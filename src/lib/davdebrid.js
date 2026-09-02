@@ -180,41 +180,47 @@ export default class Davdebrid {
 
       if(!files || (new Date() - new Date(storedDate)) > config.checkAllFilesInterval * 1000){
 
-        const previousFiles = files || [];
+        const hasPreviousSnapshot = Array.isArray(files);
+        const previousFiles = hasPreviousSnapshot ? files : [];
         const previousFileById = indexByKey(previousFiles, 'id');
         const currentFiles = await this.#debrid.getFiles();
         const currentFileById = indexByKey(currentFiles, 'id');
-        const newFiles = currentFiles.filter(file => !previousFileById[file.id]);
-        const deletedFiles = previousFiles.filter(file => !currentFileById[file.id]);
 
         console.log(`${this.#debrid.shortName} : ${currentFiles.length} files found from debrid API`);
 
         let webhooksDelivered = true;
 
-        if(newFiles.length){
-          console.log(`${this.#debrid.shortName} : ${newFiles.length} new files found from full scan`);
-          webhooksDelivered = await dispatchWebhook(
-            config.webhooks,
-            'new_files',
-            {
-              source: this.#debrid.shortName,
-              files: newFiles
-            },
-            config.webhookTimeout
-          ) && webhooksDelivered;
-        }
+        if(hasPreviousSnapshot){
+          const newFiles = currentFiles.filter(file => !previousFileById[file.id]);
+          const deletedFiles = previousFiles.filter(file => !currentFileById[file.id]);
 
-        if(deletedFiles.length){
-          console.log(`${this.#debrid.shortName} : ${deletedFiles.length} deleted files found from full scan`);
-          webhooksDelivered = await dispatchWebhook(
-            config.webhooks,
-            'deleted_files',
-            {
-              source: this.#debrid.shortName,
-              files: deletedFiles
-            },
-            config.webhookTimeout
-          ) && webhooksDelivered;
+          if(newFiles.length){
+            console.log(`${this.#debrid.shortName} : ${newFiles.length} new files found from full scan`);
+            webhooksDelivered = await dispatchWebhook(
+              config.webhooks,
+              'new_files',
+              {
+                source: this.#debrid.shortName,
+                files: newFiles
+              },
+              config.webhookTimeout
+            ) && webhooksDelivered;
+          }
+
+          if(deletedFiles.length){
+            console.log(`${this.#debrid.shortName} : ${deletedFiles.length} deleted files found from full scan`);
+            webhooksDelivered = await dispatchWebhook(
+              config.webhooks,
+              'deleted_files',
+              {
+                source: this.#debrid.shortName,
+                files: deletedFiles
+              },
+              config.webhookTimeout
+            ) && webhooksDelivered;
+          }
+        }else{
+          console.log(`${this.#debrid.shortName} : Initial file snapshot; no change webhooks emitted`);
         }
 
         if(webhooksDelivered){
