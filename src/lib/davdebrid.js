@@ -141,9 +141,19 @@ export default class Davdebrid {
 
     await cache.set(cacheKey, activeStats, {ttl: 86400});
 
+    return this.#refreshPlexLibraries();
+
+  }
+
+  async #refreshPlexLibraries(){
+
+    const {plexToken, plexUrl} = this.#config;
+    const updatedLocations = [];
+    if(!plexToken || !plexUrl) return updatedLocations;
+
     console.log(`Updating plex library ...`);
     const headers = {'X-Plex-Token': plexToken, Accept: 'application/json'};
-    
+
     const sections = await fetch(`${plexUrl}/library/sections`, {headers}).then(res => res.json());
     const directories = await this.#getDirectories();
     const sectionLocationRegex = new RegExp(`\/(${directories.map(dir => dir.name).join('|')})`);
@@ -161,7 +171,6 @@ export default class Davdebrid {
     }
 
     return updatedLocations;
-
   }
 
   async #getFiles(){
@@ -201,19 +210,21 @@ export default class Davdebrid {
           const newFiles = recentFiles.filter(recentFile => !fileById[recentFile.id]);
           if(newFiles.length){
             console.log(`${this.#debrid.shortName} : ${newFiles.length} new recent files found from debrid API`);
-
+            const directories = await this.#getDirectories();
+            const organized = new FileOrganizer(newFiles, directories).get();
+            const categoryById = new Map();
+            for(const directory of organized){
+              if(!['Movies', 'Shows'].includes(directory.name)) continue;
+              for(const file of directory.files) categoryById.set(file.id, directory.name);
+            }
+            const webhookFiles = newFiles.map(file => ({...file, category: categoryById.get(file.id)}));
+            // Plex refreshes the DavDebrid source sections before MediaBridge
+            // receives the event, as requested by the CineCircle workflow.
+            await this.#refreshPlexLibraries();
             const webhookDelivered = await dispatchWebhook(
-              config.webhooks,
-              'new_files',
-              {
-                source: this.#debrid.shortName,
-                files: newFiles
-              },
-              config.webhookTimeout
+              config.webhooks, 'new_files', {source: this.#debrid.shortName, files: webhookFiles}, config.webhookTimeout
             );
-
             files.unshift(...newFiles);
-
             if(webhookDelivered){
               await cache.set(cacheKey, [storedDate, files], {ttl: config.checkAllFilesInterval});
             }else{
