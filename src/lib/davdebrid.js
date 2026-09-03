@@ -145,7 +145,8 @@ export default class Davdebrid {
     const headers = {'X-Plex-Token': plexToken, Accept: 'application/json'};
     
     const sections = await fetch(`${plexUrl}/library/sections`, {headers}).then(res => res.json());
-    const sectionLocationRegex = new RegExp(`\\/(${this.directories.map(dir => dir.name).join('|')})`);
+    const directories = await this.#getDirectories();
+    const sectionLocationRegex = new RegExp(`\/(${directories.map(dir => dir.name).join('|')})`);
 
     // rclone --dir-cache-time 5s
     await wait(5000);
