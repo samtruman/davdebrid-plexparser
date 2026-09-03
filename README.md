@@ -291,6 +291,25 @@ If a webhook consumer is exposed outside the Docker network, use HTTPS and appro
 
 Server configuration is documented in [`src/lib/config.js`](./src/lib/config.js).
 
+### Webhooks
+
+Configure `WEBHOOKS` as a JSON array.  A target may subscribe to `new_files`,
+`deleted_files`, or `*`:
+
+```bash
+WEBHOOKS='[{"url":"http://consumer:8080/webhook","events":["new_files","deleted_files"]}]'
+```
+
+For `new_files`, DavDebrid preserves its Movies/Shows classification and sends
+it as `files[].category`.  Consumers should treat that category as
+source-authoritative rather than building a second Debrid inventory or
+reclassifying paths.  DavDebrid refreshes Plex before attempting webhook
+delivery.
+
+`WEBHOOK_TIMEOUT` is the delivery budget in milliseconds; its default is
+`300000` (five minutes) for mount-backed consumers.  Failed deliveries remain
+eligible for retry on the next recent-files check.
+
 Folder organization is configured through `config.custom.yml`.
 
 When mounted through WebDAV, the `Config` directory contains:
