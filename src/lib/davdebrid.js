@@ -306,7 +306,14 @@ export default class Davdebrid {
       for(const file of directory.files) categoryById.set(file.id, directory.name);
     }
 
-    return files.map(file => ({...file, category: categoryById.get(file.id)}));
+    // The WebDAV folders deliberately keep sidecars/subtitles next to media
+    // for Plex, but they are not MediaBridge events. Filtering here keeps the
+    // webhook and protected reconciliation snapshot on the same contract:
+    // downstream consumers receive only classified video files, with their
+    // stable source IDs unchanged.
+    return files
+      .map(file => ({...file, category: categoryById.get(file.id)}))
+      .filter(file => file.category && file.type === 'video');
   }
 
   async #getConfigFiles(){
