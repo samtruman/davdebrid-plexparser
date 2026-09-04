@@ -76,9 +76,10 @@ const server = http.createServer(async (req, res) => {
       }
 
       const files = await dav.getSourceSnapshot();
-      const safeFiles = files.map(({id, name, category, size, parent}) => ({
+      const safeFiles = files.map(({id, name, type, category, size, parent}) => ({
         id,
         name,
+        type,
         category,
         size,
         parent: parent ? {id: parent.id, name: parent.name} : undefined,
