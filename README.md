@@ -259,6 +259,30 @@ DavDebrid considers a delivery successful only when the HTTP request completes s
 
 If one or more webhook deliveries fail, the newly detected files remain eligible for delivery on the next recent-files check. This makes the webhook a notification mechanism rather than a message queue: consumers should process events idempotently and return a successful HTTP response once the event has been accepted.
 
+## Classified source snapshot (optional)
+
+An integration may need an explicit repair/reconciliation pass after it was
+offline. Set `SOURCE_SNAPSHOT_TOKEN` to enable this read-only internal API:
+
+```bash
+-e SOURCE_SNAPSHOT_TOKEN='a-long-random-secret'
+```
+
+Then an authorized consumer can request:
+
+```text
+GET /api/source-snapshot
+Authorization: Bearer a-long-random-secret
+```
+
+The response contains the current stable file ID, filename, size, parent
+metadata, and the DavDebrid `Movies`/`Shows` classification. It deliberately
+does **not** contain a debrid download URL. If `SOURCE_SNAPSHOT_TOKEN` is not
+configured, the endpoint returns `404`; an invalid token returns `401`.
+
+The snapshot is independent of the normal change detector: reading it does not
+update the detector cache or emit a webhook.
+
 ### Example: Docker Compose
 
 A consumer on the same Docker network can be configured directly with its service name:

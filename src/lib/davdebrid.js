@@ -145,6 +145,15 @@ export default class Davdebrid {
 
   }
 
+  async getSourceSnapshot(){
+    // This deliberately bypasses #getFiles(): reconciliation needs an
+    // authoritative point-in-time manifest but must not mutate the webhook
+    // detector cache or emit change notifications as a side effect.
+    const files = await this.#debrid.getFiles();
+    console.log(`${this.#debrid.shortName} : ${files.length} files returned for source snapshot`);
+    return this.#withCategories(files);
+  }
+
   async #refreshPlexLibraries(){
 
     const {plexToken, plexUrl} = this.#config;

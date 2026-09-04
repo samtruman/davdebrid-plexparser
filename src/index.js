@@ -61,7 +61,32 @@ const server = http.createServer(async (req, res) => {
 
     const dav = new Debriddav({debridId, debridApiKey, debridIp});
 
-    if(req.method === 'PROPFIND'){
+    if(req.method === 'GET' && path === '/api/source-snapshot'){
+
+      // This endpoint exists for downstream reconciliation only. It exposes
+      // stable IDs and DavDebrid's Movies/Shows classification, never a
+      // debrid download URL. It is opt-in so an otherwise public WebDAV
+      // server does not accidentally publish a media manifest.
+      const token = config.sourceSnapshotToken;
+      const authorization = req.headers.authorization || '';
+      if(!token || authorization !== `Bearer ${token}`){
+        res.writeHead(token ? 401 : 404);
+        res.end(token ? 'Unauthorized' : 'Not Found');
+        return;
+      }
+
+      const files = await dav.getSourceSnapshot();
+      const safeFiles = files.map(({id, name, category, size, parent}) => ({
+        id,
+        name,
+        category,
+        size,
+        parent: parent ? {id: parent.id, name: parent.name} : undefined,
+      }));
+      res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
+      res.end(JSON.stringify({source: debridId, files: safeFiles}));
+
+    }else if(req.method === 'PROPFIND'){
 
       const files = await dav.listFiles(path);
       const xmlResponse = generatePropfindResponse(path, files);

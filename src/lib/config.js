@@ -20,6 +20,9 @@ export default {
   // Generic HTTP webhooks. Configure as a JSON array in WEBHOOKS.
   webhooks: normalizeWebhooks(process.env.WEBHOOKS),
   webhookTimeout: Math.max(1000, parseInt(process.env.WEBHOOK_TIMEOUT || 300000)),
+  // Optional bearer token for the read-only classified source snapshot API.
+  // Leaving this empty keeps the endpoint unavailable.
+  sourceSnapshotToken: process.env.SOURCE_SNAPSHOT_TOKEN || '',
   // Data folder for cache database ... Must be persistent in production
   dataFolder: process.env.DATA_FOLDER || '/tmp',
   // Partials scan from debrid API, only add recent detected files
