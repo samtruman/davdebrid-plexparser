@@ -275,12 +275,12 @@ GET /api/source-snapshot
 Authorization: Bearer a-long-random-secret
 ```
 
-The response contains only current classified video files: stable file ID,
-filename, size, parent metadata, and the DavDebrid `Movies`/`Shows`
-classification. Torrent sidecars such as `.txt`, `.nfo`, images and other
-unclassified files are deliberately excluded. It does **not** contain a
-debrid download URL. If `SOURCE_SNAPSHOT_TOKEN` is not configured, the
-endpoint returns `404`; an invalid token returns `401`.
+The response contains only current classified media: video files and their
+classified subtitle companions, with stable file ID, filename, type, size,
+parent metadata, and DavDebrid `Movies`/`Shows` classification. Torrent
+sidecars such as `.txt`, `.nfo` and images are deliberately excluded. It does
+**not** contain a debrid download URL. If `SOURCE_SNAPSHOT_TOKEN` is not
+configured, the endpoint returns `404`; an invalid token returns `401`.
 
 The snapshot is independent of the normal change detector: reading it does not
 update the detector cache or emit a webhook.
