@@ -19,7 +19,7 @@ export default {
   plexToken: process.env.PLEX_TOKEN || '',
   // Generic HTTP webhooks. Configure as a JSON array in WEBHOOKS.
   webhooks: normalizeWebhooks(process.env.WEBHOOKS),
-  webhookTimeout: Math.max(1000, parseInt(process.env.WEBHOOK_TIMEOUT || 10000)),
+  webhookTimeout: Math.max(1000, parseInt(process.env.WEBHOOK_TIMEOUT || 300000)),
   // Data folder for cache database ... Must be persistent in production
   dataFolder: process.env.DATA_FOLDER || '/tmp',
   // Partials scan from debrid API, only add recent detected files

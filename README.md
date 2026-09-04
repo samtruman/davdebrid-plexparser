@@ -1,16 +1,33 @@
-# DavDebrid
+# DavDebrid Plex Parser
 
-A self-hosted WebDAV server for Debrid-Link, automatically organizing your media files (Movies/TV Shows) for seamless integration with your media center. Changes are detected in 30sec, allowing updates to instantly appear in your Plex library. The rclone mount is optimized to minimize bandwidth usage from debrid.
+A self-hosted WebDAV server for Debrid services, automatically organizing media files into **Movies** and **TV Shows** for seamless integration with Plex and other media centers.
 
-## Installation
+This fork adds a **Plex-style media classifier** to improve the reliability of movie/TV show detection. In particular, filenames containing standard episode markers such as `S01E01`, `S1E1`, or `1x01` are classified as TV shows instead of relying only on the number of videos in the parent directory.
 
-### Run with Docker
+It also adds an optional **generic HTTP webhook** for newly detected files. The webhook is deliberately service-agnostic: DavDebrid only reports the event and does not depend on a particular downstream application.
+
+## What's different from upstream
+
+- Robust movie/TV show classification based on Plex-style episode naming patterns.
+- Supports common episode formats such as `S01E01`, `S1E1`, `S01-E01`, `1x01`, and season/episode wording.
+- Keeps the `All`, `Shows`, and `Movies` WebDAV directories.
+- Optional generic HTTP webhooks for events such as newly detected files.
+- Webhook delivery includes a stable event ID so consumers can safely implement idempotency.
+- Multiple webhook endpoints can subscribe independently to selected events.
+- Multi-platform Docker image for `linux/amd64` and `linux/arm64`.
+- Docker images are published automatically from the `main` branch through GitHub Actions.
+
+## Docker
+
+The custom image is published on Docker Hub as:
+
+```text
+samtruman/davdebrid-plexparser:latest
+```
+
+Run it with:
 
 ```bash
-# Create a volume
-docker volume create davdebrid_data
-
-# Run the container
 docker run -d \
   --name=davdebrid \
   -p 8080:8080 \
@@ -19,16 +36,47 @@ docker run -d \
   -e DEBRID_API_KEY=apikey \
   -e DATA_FOLDER=/data \
   -v davdebrid_data:/data \
-  arvida42/davdebrid:latest
+  samtruman/davdebrid-plexparser:latest
 ```
 
-Your server is available on http://localhost:8080
+The published `8080` port is the **WebDAV server port**. DavDebrid does **not** open a separate listening port for webhooks: webhook delivery is outbound HTTP/HTTPS from DavDebrid to the configured consumer URL.
 
-You can mount it locally with rclone by using the following command:
+## Installation
+
+### Run with Docker Compose and Mount with Rclone
+
+1. Download the [`docker-compose.yml`](./docker-compose.yml) file.
+2. Edit the `DEBRID_API_KEY`.
+3. By default, the mount point is set to a Docker volume. You can change this to a local directory if preferred.
+4. Run:
+
+```bash
+docker compose up -d
+```
+
+The included Rclone configuration uses a short directory cache time so that changes detected by DavDebrid become visible promptly through the mount.
+
+### Run with Docker Compose, Mount with Rclone, and Plex
+
+1. Download the [`docker-compose-plex.yml`](./docker-compose-plex.yml) file.
+2. Configure `DEBRID_API_KEY` and the Plex settings.
+3. Start the services:
+
+```bash
+docker compose -f docker-compose-plex.yml up -d
+```
+
+DavDebrid can automatically refresh Plex when changes are detected in the Debrid library.
+
+## Rclone
+
+DavDebrid exposes the organized media through WebDAV. A typical Rclone mount is:
+
 ```bash
 export RCLONE_CONFIG_DAV_TYPE=webdav
 export RCLONE_CONFIG_DAV_URL=http://localhost:8080
 export RCLONE_CONFIG_DAV_VENDOR=other
+
 rclone mount dav: /mnt/dav \
   --dir-cache-time 5s \
   --allow-other \
@@ -40,101 +88,239 @@ rclone mount dav: /mnt/dav \
   --allow-non-empty
 ```
 
-### Run with Docker Compose and Mount with Rclone
+The WebDAV root contains:
 
-1. Download the [`downloader-compose.yml`](./docker-compose.yml) file.
-2. Edit the `DEBRID_API_KEY`. You can obtain it from [Debrid-Link API Key](https://debrid-link.com/webapp/apikey).
-3. By default, the mount point is set to a Docker volume (`davdebrid-mnt`). You can change this to a local directory if preferred.
-4. Run the following command to start the services:
-  ```bash
-  docker compose up -d
-  ```
+```text
+/
+├── All/
+├── Shows/
+├── Movies/
+└── Config/
+```
 
-### Run with Docker Compose, Mount with Rclone, and Run the Plex Server
+## Media classification
 
-1. Download the [`downloader-compose-plex.yml`](./docker-compose-plex.yml) file.
-2. Edit the `DEBRID_API_KEY`. You can get it from [Debrid-Link API Key](https://debrid-link.com/webapp/apikey).
-3. Edit the `PLEX_CLAIM`. You can obtain it from [Plex Claim Token](https://plex.tv/claim).
-4. Run the following command to start the services:
-  ```bash
-  docker compose -f docker-compose-plex.yml up -d
-  ```
-5. To automatically update your Plex library when changes are detected in Debrid. Go to Plex at http://localhost:32400, open Developer Tools, run the command `localStorage.myPlexAccessToken` and copy the result into the `PLEX_TOKEN` setting.
-6. Restart the services with the updated configuration:
-  ```bash
-  docker compose -f docker-compose-plex.yml up -d
-  ```
-7. In Plex settings, under Library, set the following options to "**never**":
-  - Generate video preview thumbnails
-  - Generate chapter thumbnails
-  - Analyze audio tracks for loudness
-8. Finally, configure Plex to use your WebDAV mount. The WebDAV is mounted at `/mnt/dav`.
+The fork uses a dedicated classifier before the generic folder-organizer rules are applied.
+
+### TV Shows
+
+A video is classified as a TV episode when its filename contains a recognized episode marker, for example:
+
+```text
+Example.Show.S01E01.1080p.WEB-DL.mkv
+Another.Series.S02E03.2160p.WEB-DL.mkv
+Sample.Show.1x04.1080p.WEB-DL.mkv
+Demo.Series.S03-E07.1080p.WEB-DL.mkv
+```
+
+These files are exposed under:
+
+```text
+/Shows/
+```
+
+### Movies
+
+Video files without an episode marker are classified as movies, for example:
+
+```text
+Example.Movie.2025.2160p.WEB-DL.mkv
+Another.Movie.2024.1080p.BluRay.mkv
+Sample.Film.2026.2160p.WEB-DL.mkv
+```
+
+These files are exposed under:
+
+```text
+/Movies/
+```
+
+Subtitles continue to be handled by the existing folder-organizer logic.
+
+## Webhooks
+
+Webhooks provide a generic integration point for applications that need to react when DavDebrid detects new files in the Debrid library.
+
+DavDebrid already checks the Debrid service for recently added files. When a new file is detected, the webhook system can send an HTTP `POST` notification to one or more configured services. This avoids requiring external applications to poll the filesystem or WebDAV mount themselves.
+
+The feature is deliberately **service-agnostic**. DavDebrid does not know whether the receiving service is a media manager, an indexer, an automation service, a notification system, or a custom application. Each consumer decides what to do with the event.
+
+For example, a consumer could receive a `new_files` event and then:
+
+```text
+DavDebrid
+   │
+   ├── detects new file
+   │
+   ▼
+HTTP POST
+   │
+   ├── Media manager
+   ├── Indexer
+   ├── Notification service
+   └── Custom application
+```
+
+### Networking and ports
+
+DavDebrid is the **webhook sender**, not the webhook server.
+
+There is no dedicated webhook listener and therefore no `WEBHOOK_PORT` setting in DavDebrid. The receiving service owns its own HTTP/HTTPS listener and port. The complete destination, including the port when required, is specified in the webhook URL.
+
+#### Container-to-container
+
+If the consumer runs in another Docker container on a shared Docker network, use the consumer's Docker DNS name and its **internal container port**:
+
+```text
+http://media-service:8080/webhook
+```
+
+No host port needs to be published for this communication. For example:
+
+```text
+DavDebrid container
+       │
+       │ HTTP POST
+       ▼
+media-service:8080
+       │
+       └── webhook consumer
+```
+
+This is the preferred setup when both services run on the same Docker network.
+
+#### Service running on the Docker host
+
+If the consumer runs directly on the Docker host rather than in a container, configure an address reachable from the container, together with the port on which the host service listens. The exact host address depends on the Docker/network configuration.
+
+#### External service
+
+A consumer on another server can be addressed with a normal HTTP or HTTPS URL:
+
+```text
+https://example.example.com/api/webhook
+```
+
+In this case the receiving service is responsible for exposing and protecting its endpoint. DavDebrid only makes the outbound request.
+
+### Configuration
+
+Webhooks are optional and disabled unless `WEBHOOKS` is configured.
+
+`WEBHOOKS` accepts a JSON array. Each target can subscribe to one or more event types:
+
+```bash
+-e 'WEBHOOKS=[{"url":"http://example-service:8080/webhook","events":["new_files"]}]'
+```
+
+The port in the URL (`8080` in this example) belongs to the **receiving service**, not to DavDebrid.
+
+Multiple independent targets are supported:
+
+```bash
+-e 'WEBHOOKS=[{"url":"http://service-a:8080/webhook","events":["new_files"]},{"url":"http://service-b:9000/davdebrid","events":["new_files"]}]'
+```
+
+Each consumer can use a different hostname, path, and port.
+
+If `events` is omitted, the endpoint receives `new_files` events by default. Use `*` to subscribe to all supported events.
+
+The optional `WEBHOOK_TIMEOUT` environment variable controls the HTTP request timeout in milliseconds and defaults to `10000` (10 seconds).
+
+### `new_files` event
+
+For newly detected files, DavDebrid sends an HTTP `POST` with `Content-Type: application/json` and a payload similar to:
+
+```json
+{
+  "event": "new_files",
+  "event_id": "stable-event-id",
+  "timestamp": "2026-01-01T00:00:00.000Z",
+  "source": "AD",
+  "files": [
+    {
+      "id": "123456",
+      "name": "Example.Show.S01E01.1080p.WEB-DL.mkv",
+      "size": 123456789,
+      "type": "video"
+    }
+  ]
+}
+```
+
+The request also includes:
+
+- `X-DavDebrid-Event` — event type.
+- `X-DavDebrid-Event-ID` — stable event identifier.
+
+The event ID is derived from the event type and the detected file IDs. Consumers should use it for idempotency because a failed delivery is retried on a later recent-files check.
+
+DavDebrid considers a delivery successful only when the HTTP request completes successfully with a 2xx response. The response body is ignored.
+
+If one or more webhook deliveries fail, the newly detected files remain eligible for delivery on the next recent-files check. This makes the webhook a notification mechanism rather than a message queue: consumers should process events idempotently and return a successful HTTP response once the event has been accepted.
+
+### Example: Docker Compose
+
+A consumer on the same Docker network can be configured directly with its service name:
+
+```yaml
+environment:
+  WEBHOOKS: >-
+    [{"url":"http://consumer:8080/webhook","events":["new_files"]}]
+```
+
+The `8080` above is the port exposed **inside the Docker network by the consumer service**. It does not need to be published on the host.
+
+If the consumer instead listens internally on `9000`, simply use:
+
+```yaml
+environment:
+  WEBHOOKS: >-
+    [{"url":"http://consumer:9000/webhook","events":["new_files"]}]
+```
+
+No DavDebrid code change is required when changing the consumer port.
+
+### Security
+
+Webhook URLs are configured by the operator and may contain internal network addresses. Webhooks should normally be sent to trusted services on a private network or otherwise protected using the deployment's network and access controls.
+
+If a webhook consumer is exposed outside the Docker network, use HTTPS and appropriate authentication/access controls. DavDebrid currently provides event headers and a stable event ID, but these are **not authentication credentials**.
 
 ## Configuration
 
-### Server
+Server configuration is documented in [`src/lib/config.js`](./src/lib/config.js).
 
-All server configurations are documented in the [config.js file](./src/lib/config.js)
+### Webhooks
 
-### Folder organizing
+Configure `WEBHOOKS` as a JSON array.  A target may subscribe to `new_files`,
+`deleted_files`, or `*`:
 
-When you mount the WebDAV server, you’ll find a `Config` directory containing two files:
-
-- **`config.yml`**: This is the default configuration file for your directories. It provides base settings and is read-only, so it cannot be modified.
-- **`config.custom.yml`**: This is your customizable configuration file. You can edit it to define and apply your own organization rules for directories, which will override the default configuration.
-
-Each directory configuration is processed sequentially in the order specified in the configuration file.
-
-#### Folder Properties
-- **`name`**: The display name for the directory at the root of your WebDAV.
-- **`unique`**: Specifies whether the directory is unique. Files in non-unique directories can also appear in other matching directories. Files cannot appear in more than one unique directory.
-- **`cond`**: The condition used to determine which files are in the directory.
-
-#### Condition Types
-- **`regex`**: Matches files based on the specified regex pattern.
-- **`minVideosInParent`**: Requires that the file be located within a parent directory containing at least `n` video files.
-- **`fileTypes`**: Defines the acceptable file types (e.g., `video`, `subtitle`, `music`, `image`, `unknown`).
-- **`or`**: Applies an `OR` logic across the listed conditions.
-- **`and`**: Applies an `AND` logic across conditions. This is the default behavior and doesn’t need to be explicitly specified.
-
-
-For example, the default organization rules:
-
-```yaml
-# Default Configuration - Cannot be Overwritten
-# To customize, please edit the 'config.custom.yml' file.
-
-# Folder Organizer Conditions
-# Files available on the debrid service will be organized into directories based on specified conditions.
-# If a file matches a 'unique' directory condition, no further `unique` directory conditions will be checked for that file.
-
-directories:
-
-  # This directory contains all files, regardless of type.
-  # Since this is not a unique condition, files may also appear in other applicable directories.
-  - name: 'All'
-    unique: false
-    cond: {}
-
-  # This directory contains only video and subtitle files that match the specified regex 
-  # or are located within a parent directory containing more than six video files 
-  # (e.g., torrent with multiple videos).
-  - name: 'Shows'
-    unique: true
-    cond:
-      or:
-        regex: '[0-9]+E[0-9]+|[0-9]+x[0-9]+'
-        minVideosInParent: 6
-      fileTypes:
-        - 'video'
-        - 'subtitle'
-
-  # This directory contains all remaining video and subtitle files that do not match the conditions of previous unique directories (Shows).
-  - name: 'Movies'
-    unique: true
-    cond:
-      fileTypes:
-        - 'video'
-        - 'subtitle'
-
+```bash
+WEBHOOKS='[{"url":"http://consumer:8080/webhook","events":["new_files","deleted_files"]}]'
 ```
+
+For `new_files`, DavDebrid preserves its Movies/Shows classification and sends
+it as `files[].category`.  Consumers should treat that category as
+source-authoritative rather than building a second Debrid inventory or
+reclassifying paths.  DavDebrid refreshes Plex before attempting webhook
+delivery.
+
+`WEBHOOK_TIMEOUT` is the delivery budget in milliseconds; its default is
+`300000` (five minutes) for mount-backed consumers.  Failed deliveries remain
+eligible for retry on the next recent-files check.
+
+Folder organization is configured through `config.custom.yml`.
+
+When mounted through WebDAV, the `Config` directory contains:
+
+- **`config.yml`** — default configuration.
+- **`config.custom.yml`** — user-customizable configuration.
+
+The directory rules are processed sequentially. `All` remains non-unique, while `Shows` and `Movies` are unique directories.
+
+## Fork status
+
+This repository is a fork of [`arvida42/davdebrid`](https://github.com/arvida42/davdebrid) with the media-classification and generic webhook changes described above.
+
+The project is intended to remain compatible with the upstream DavDebrid architecture while providing more reliable Plex-oriented movie and TV show detection and an optional integration point for external services.

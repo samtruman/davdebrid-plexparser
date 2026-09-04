@@ -141,11 +141,22 @@ export default class Davdebrid {
 
     await cache.set(cacheKey, activeStats, {ttl: 86400});
 
+    return this.#refreshPlexLibraries();
+
+  }
+
+  async #refreshPlexLibraries(){
+
+    const {plexToken, plexUrl} = this.#config;
+    const updatedLocations = [];
+    if(!plexToken || !plexUrl) return updatedLocations;
+
     console.log(`Updating plex library ...`);
     const headers = {'X-Plex-Token': plexToken, Accept: 'application/json'};
 
     const sections = await fetch(`${plexUrl}/library/sections`, {headers}).then(res => res.json());
-    const sectionLocationRegex = new RegExp(`\\/(${this.directories.map(dir => dir.name).join('|')})`);
+    const directories = await this.#getDirectories();
+    const sectionLocationRegex = new RegExp(`\/(${directories.map(dir => dir.name).join('|')})`);
 
     // rclone --dir-cache-time 5s
     await wait(5000);
@@ -160,7 +171,6 @@ export default class Davdebrid {
     }
 
     return updatedLocations;
-
   }
 
   async #getFiles(){
@@ -196,12 +206,14 @@ export default class Davdebrid {
 
           if(newFiles.length){
             console.log(`${this.#debrid.shortName} : ${newFiles.length} new files found from full scan`);
+            const webhookFiles = await this.#withCategories(newFiles);
+            await this.#refreshPlexLibraries();
             webhooksDelivered = await dispatchWebhook(
               config.webhooks,
               'new_files',
               {
                 source: this.#debrid.shortName,
-                files: newFiles
+                files: webhookFiles
               },
               config.webhookTimeout
             ) && webhooksDelivered;
@@ -209,12 +221,13 @@ export default class Davdebrid {
 
           if(deletedFiles.length){
             console.log(`${this.#debrid.shortName} : ${deletedFiles.length} deleted files found from full scan`);
+            const webhookFiles = await this.#withCategories(deletedFiles);
             webhooksDelivered = await dispatchWebhook(
               config.webhooks,
               'deleted_files',
               {
                 source: this.#debrid.shortName,
-                files: deletedFiles
+                files: webhookFiles
               },
               config.webhookTimeout
             ) && webhooksDelivered;
@@ -246,18 +259,13 @@ export default class Davdebrid {
           const newFiles = recentFiles.filter(recentFile => !fileById[recentFile.id]);
           if(newFiles.length){
             console.log(`${this.#debrid.shortName} : ${newFiles.length} new recent files found from debrid API`);
+            const webhookFiles = await this.#withCategories(newFiles);
+            // Refresh Plex source libraries before notification delivery.
+            await this.#refreshPlexLibraries();
             const webhookDelivered = await dispatchWebhook(
-              config.webhooks,
-              'new_files',
-              {
-                source: this.#debrid.shortName,
-                files: newFiles
-              },
-              config.webhookTimeout
+              config.webhooks, 'new_files', {source: this.#debrid.shortName, files: webhookFiles}, config.webhookTimeout
             );
-
             files.unshift(...newFiles);
-
             if(webhookDelivered){
               await cache.set(cacheKey, [storedDate, files], {ttl: config.checkAllFilesInterval * 2});
             }else{
@@ -276,6 +284,20 @@ export default class Davdebrid {
 
     }
 
+  }
+
+  async #withCategories(files){
+
+    const directories = await this.#getDirectories();
+    const organized = new FileOrganizer(files, directories).get();
+    const categoryById = new Map();
+
+    for(const directory of organized){
+      if(!['Movies', 'Shows'].includes(directory.name)) continue;
+      for(const file of directory.files) categoryById.set(file.id, directory.name);
+    }
+
+    return files.map(file => ({...file, category: categoryById.get(file.id)}));
   }
 
   async #getConfigFiles(){
