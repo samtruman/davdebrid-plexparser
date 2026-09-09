@@ -22,7 +22,7 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v4
         with:
-          username: samtruman
+          username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push
@@ -31,5 +31,5 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            samtruman/davdebrid-plexparser:latest
-            samtruman/davdebrid-plexparser:${{ github.sha }}
+            ${{ vars.DOCKERHUB_USERNAME }}/davdebrid-plexparser:latest
+            ${{ vars.DOCKERHUB_USERNAME }}/davdebrid-plexparser:${{ github.sha }}

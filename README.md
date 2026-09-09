@@ -25,6 +25,11 @@ The custom image is published on Docker Hub as:
 samtruman/davdebrid-plexparser:latest
 ```
 
+For maintainers, the publication workflow takes the Docker Hub namespace from
+the repository variable `DOCKERHUB_USERNAME` and its credential from the
+`DOCKER_PASSWORD` repository secret. Set both before running the workflow in a
+fork; the image examples above refer to this project's published image.
+
 Run it with:
 
 ```bash
